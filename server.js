@@ -15,6 +15,14 @@ dotenv.config();
 // Initialize express app FIRST
 const app = express();
 
+// MOVE CORS TO THE TOP
+app.use(cors({
+  origin: "*", 
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+  credentials: true
+}));
+
 // Create HTTP server
 const server = http.createServer(app);
 
@@ -127,11 +135,6 @@ io.on("connection", (socket) => {
 });
 
 // Middlewares
-app.use(cors({
-  origin: "*", 
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
 app.use(express.json());
 
 // Connect to MongoDB

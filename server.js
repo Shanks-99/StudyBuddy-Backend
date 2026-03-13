@@ -46,31 +46,47 @@ io.on("connection", (socket) => {
 
   // --- Study Room Socket Logic ---
   socket.on("join-room", ({ roomId, userId, name }) => {
-    socket.join(roomId);
+    if (!userId) {
+      console.error(`[Socket] join-room failed: Missing userId for user ${name}`);
+      return;
+    }
 
-    // Add user to memory state
-    if (!roomUsers[roomId]) {
+    console.log(`[Socket] User ${name} (${userId}) attempting to join room ${roomId}`);
+
+    // --- FIX Phase 2: Cleanup FIRST ---
+    if (roomUsers[roomId]) {
+      const staleEntries = roomUsers[roomId].filter(u => String(u.userId) === String(userId));
+      if (staleEntries.length > 0) {
+        console.log(`[Socket] Cleanup: Found ${staleEntries.length} stale sessions for user ${userId}. Clearing...`);
+        staleEntries.forEach(stale => {
+          socket.to(roomId).emit("user-left", stale.socketId);
+        });
+        roomUsers[roomId] = roomUsers[roomId].filter(u => String(u.userId) !== String(userId));
+      }
+    } else {
       roomUsers[roomId] = [];
     }
 
-    // Only add if not already in the list for this socket
-    const existingUser = roomUsers[roomId].find(u => u.socketId === socket.id);
-    if (!existingUser) {
-      const newUser = { socketId: socket.id, userId, name };
-      roomUsers[roomId].push(newUser);
-    }
+    // Now safe to join
+    socket.join(roomId);
 
-    // Broadcast updated participant list to everyone in the room
+    // Add new user entry
+    const newUser = { socketId: socket.id, userId, name };
+    roomUsers[roomId].push(newUser);
+    
+    console.log(`[Socket] Room ${roomId} active participants:`, roomUsers[roomId].map(u => u.name));
+
+    // Broadcast updated participant list
     io.to(roomId).emit("room-users", roomUsers[roomId]);
 
-    // Optional: Notify others that this user joined (handled gracefully by frontend usually)
+    // Notify others
     socket.to(roomId).emit("user-joined", { socketId: socket.id, userId, name });
   });
 
   socket.on("send-message", async (data) => {
-    // data: { roomId, sender (userId), text, name }
     try {
       const Message = require("./models/Message");
+      console.log(`[Chat] Incoming -> User: ${data.name || data.sender}, ID: ${data.clientSideId || 'NONE'}`);
 
       // Save to database
       const newMessage = await Message.create({
@@ -82,10 +98,18 @@ io.on("connection", (socket) => {
       // Populate sender name before sending back
       await newMessage.populate('sender', 'name');
 
+      // Convert to plain object to attach clientSideId
+      const messageResponse = newMessage.toObject({ virtuals: true });
+      messageResponse.clientSideId = data.clientSideId || null;
+      
+      if (messageResponse.clientSideId) {
+          console.log(`[Chat] Broadcast -> Final ID attached: ${messageResponse.clientSideId}`);
+      }
+
       // Broadcast to room
-      io.to(data.roomId).emit("receive-message", newMessage);
+      io.to(data.roomId).emit("receive-message", messageResponse);
     } catch (err) {
-      console.error("Socket send-message error:", err);
+      console.error("[Chat] Error:", err);
     }
   });
 
@@ -120,15 +144,18 @@ io.on("connection", (socket) => {
 
   // --- Disconnect Logic ---
   socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
+    console.log("[Socket] User disconnected:", socket.id);
     // Find rooms this user was in, remove them, and broadcast new list
     for (const roomId in roomUsers) {
-      const index = roomUsers[roomId].findIndex(u => u.socketId === socket.id);
-      if (index !== -1) {
-        roomUsers[roomId].splice(index, 1);
-        io.to(roomId).emit("room-users", roomUsers[roomId]);
-        socket.to(roomId).emit("user-left", socket.id);
-        break; // Assuming a socket is only in one room at a time for this app
+      if (roomUsers[roomId]) {
+        const initialCount = roomUsers[roomId].length;
+        roomUsers[roomId] = roomUsers[roomId].filter(u => u.socketId !== socket.id);
+        
+        if (roomUsers[roomId].length !== initialCount) {
+          console.log(`[Socket] Cleaned up socket ${socket.id} from room ${roomId}`);
+          io.to(roomId).emit("room-users", roomUsers[roomId]);
+          socket.to(roomId).emit("user-left", socket.id);
+        }
       }
     }
   });

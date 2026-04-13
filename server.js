@@ -114,7 +114,13 @@ io.on("connection", (socket) => {
   });
 
   // --- WebRTC Signaling ---
-  // When a new user joins, existing users send an offer to them
+  // Unified signal relay — forwards ALL SimplePeer signaling data as-is
+  socket.on("webrtc-signal", ({ signal, to }) => {
+    console.log(`[WebRTC] Relaying signal from ${socket.id} to ${to}, type=${signal.type || 'ice'}`);
+    socket.to(to).emit("webrtc-signal", { signal, from: socket.id });
+  });
+
+  // Legacy events kept for safety (can be removed later)
   socket.on("webrtc-offer", ({ offer, to }) => {
     socket.to(to).emit("webrtc-offer", { offer, from: socket.id });
   });

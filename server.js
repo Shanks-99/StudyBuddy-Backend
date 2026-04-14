@@ -120,19 +120,6 @@ io.on("connection", (socket) => {
     socket.to(to).emit("webrtc-signal", { signal, from: socket.id });
   });
 
-  // Legacy events kept for safety (can be removed later)
-  socket.on("webrtc-offer", ({ offer, to }) => {
-    socket.to(to).emit("webrtc-offer", { offer, from: socket.id });
-  });
-
-  socket.on("webrtc-answer", ({ answer, to }) => {
-    socket.to(to).emit("webrtc-answer", { answer, from: socket.id });
-  });
-
-  socket.on("webrtc-ice-candidate", ({ candidate, to }) => {
-    socket.to(to).emit("webrtc-ice-candidate", { candidate, from: socket.id });
-  });
-
   // --- End Room Logic ---
   socket.on("end-room", ({ roomId }) => {
     // Broadcast to everyone in the room that it has ended

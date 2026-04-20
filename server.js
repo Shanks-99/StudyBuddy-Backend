@@ -9,6 +9,7 @@ const notesRoutes = require("./routes/notesRoutes");
 const quizRoutes = require("./routes/quizRoutes");
 const focusRoutes = require("./routes/focusRoutes");
 const studyRoomRoutes = require("./routes/studyRoomRoutes");
+const mentorshipRoutes = require("./routes/mentorshipRoutes");
 
 dotenv.config();
 
@@ -166,6 +167,7 @@ app.use("/api/notes", notesRoutes);
 app.use("/api/quiz", quizRoutes);
 app.use("/api/focus", focusRoutes);
 app.use("/api/studyrooms", studyRoomRoutes);
+app.use("/api/mentorship", mentorshipRoutes);
 
 // Test Route
 app.get("/", (req, res) => {

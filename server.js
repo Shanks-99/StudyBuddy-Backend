@@ -1,6 +1,8 @@
+const dotenv = require("dotenv");
+dotenv.config();
+
 const express = require("express");
 const cors = require("cors");
-const dotenv = require("dotenv");
 const http = require("http");
 const { Server } = require("socket.io");
 const connectDB = require("./config/db");
@@ -10,8 +12,6 @@ const quizRoutes = require("./routes/quizRoutes");
 const focusRoutes = require("./routes/focusRoutes");
 const studyRoomRoutes = require("./routes/studyRoomRoutes");
 const mentorshipRoutes = require("./routes/mentorshipRoutes");
-
-dotenv.config();
 
 // Initialize express app FIRST
 const app = express();

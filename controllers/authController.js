@@ -3,6 +3,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { OAuth2Client } = require("google-auth-library");
+const axios = require("axios");
 const { sendVerificationEmail, sendPasswordResetEmail } = require("../config/emailService");
 
 const googleClient = new OAuth2Client();
@@ -285,18 +286,32 @@ exports.loginWithGoogle = async (req, res) => {
       return res.status(500).json({ msg: "Google auth is not configured on the server" });
     }
 
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: process.env.GOOGLE_CLIENT_ID
-    });
-
-    const payload = ticket.getPayload();
-    if (!payload?.email || !payload?.sub) {
-      return res.status(400).json({ msg: "Invalid Google token" });
+    let payload;
+    
+    // Try verifying as ID Token first
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID
+      });
+      payload = ticket.getPayload();
+    } catch (verifyError) {
+      // If ID Token verification fails, assume it's an Access Token and fetch UserInfo
+      try {
+        const googleResponse = await axios.get(`https://www.googleapis.com/oauth2/v3/userinfo`, {
+          headers: { Authorization: `Bearer ${idToken}` }
+        });
+        payload = googleResponse.data;
+        // Map fields to match ticket.getPayload() structure
+        payload.sub = payload.sub || payload.id;
+      } catch (axiosError) {
+        console.error("Google token verification failed:", verifyError.message, axiosError.message);
+        return res.status(400).json({ msg: "Invalid Google token (neither ID nor Access token)" });
+      }
     }
 
-    if (!payload.email_verified) {
-      return res.status(400).json({ msg: "Google email is not verified" });
+    if (!payload?.email || !payload?.sub) {
+      return res.status(400).json({ msg: "Invalid Google account data" });
     }
 
     const normalizedEmail = payload.email.trim().toLowerCase();

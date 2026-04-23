@@ -24,6 +24,12 @@ app.use(cors({
   credentials: true
 }));
 
+// Add COOP header for Google Auth popups
+app.use((req, res, next) => {
+  res.header("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+  next();
+});
+
 // Create HTTP server
 const server = http.createServer(app);
 

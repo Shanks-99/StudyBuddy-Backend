@@ -172,6 +172,8 @@ exports.listMentorsForStudents = async (_req, res) => {
     }
 };
 
+const { createNotification } = require("./notificationController");
+
 exports.createSessionRequest = async (req, res) => {
     try {
         if (!ensureStudent(req, res)) return;
@@ -219,6 +221,18 @@ exports.createSessionRequest = async (req, res) => {
         }
 
         const session = await MentorshipSession.create(payload);
+
+        // Notify Mentor
+        if (payload.mentor) {
+            await createNotification(
+                payload.mentor,
+                "New Mentorship Request",
+                `${req.user.name} requested a session for ${subject} on ${dateLabel} at ${timeSlot}`,
+                "mentorship_request",
+                "/instructor-dashboard"
+            );
+        }
+
         res.status(201).json({ session });
     } catch (error) {
         console.error("createSessionRequest error:", error);
@@ -266,6 +280,17 @@ exports.acceptSessionRequest = async (req, res) => {
             return res.status(404).json({ msg: "Session request not found" });
         }
 
+        // Notify Student
+        if (session.student) {
+            await createNotification(
+                session.student,
+                "Mentorship Session Accepted",
+                `Your session with ${mentorName} for ${session.subject} has been accepted!`,
+                "mentorship_status",
+                "/student-dashboard"
+            );
+        }
+
         res.json({ session });
     } catch (error) {
         console.error("acceptSessionRequest error:", error);
@@ -294,6 +319,17 @@ exports.declineSessionRequest = async (req, res) => {
 
         if (!session) {
             return res.status(404).json({ msg: "Session request not found" });
+        }
+
+        // Notify Student
+        if (session.student) {
+            await createNotification(
+                session.student,
+                "Mentorship Session Declined",
+                `Sorry, ${mentorName} declined your session request for ${session.subject}.`,
+                "mentorship_status",
+                "/mentorship"
+            );
         }
 
         res.json({ session });

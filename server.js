@@ -161,8 +161,11 @@ io.on("connection", (socket) => {
   });
 });
 
+const notificationRoutes = require("./routes/notificationRoutes");
+
 // Middlewares
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Connect to MongoDB
 connectDB();
@@ -174,6 +177,7 @@ app.use("/api/quiz", quizRoutes);
 app.use("/api/focus", focusRoutes);
 app.use("/api/studyrooms", studyRoomRoutes);
 app.use("/api/mentorship", mentorshipRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // Test Route
 app.get("/", (req, res) => {

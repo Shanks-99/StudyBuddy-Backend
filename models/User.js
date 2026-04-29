@@ -47,6 +47,22 @@ const userSchema = new mongoose.Schema(
     },
     resetCodeExpires: {
       type: Date
+    },
+    avatar: {
+      type: String,
+      default: ""
+    },
+    grade: {
+      type: String,
+      default: ""
+    },
+    field: {
+      type: String,
+      default: ""
+    },
+    bio: {
+      type: String,
+      default: ""
     }
   },
   { timestamps: true }

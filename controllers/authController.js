@@ -265,7 +265,10 @@ exports.loginUser = async (req, res) => {
     // jwt token
     const token = createJwtToken(user);
 
-    res.json({ token, id: user._id, role: user.role, name: user.name });
+    const userResponse = user.toObject();
+    delete userResponse.passwordHash;
+
+    res.json({ token, ...userResponse });
 
   } catch (error) {
     console.log(error);
@@ -363,7 +366,10 @@ exports.loginWithGoogle = async (req, res) => {
     }
 
     const token = createJwtToken(user);
-    res.json({ token, id: user._id, role: user.role, name: user.name });
+    const userResponse = user.toObject();
+    delete userResponse.passwordHash;
+
+    res.json({ token, ...userResponse });
   } catch (error) {
     console.error("Google login error:", error.message);
     res.status(500).json({ msg: "Google login failed" });
@@ -504,6 +510,93 @@ exports.resetPassword = async (req, res) => {
 
   } catch (error) {
     console.log(error);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+// GET USER PROFILE
+exports.getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("-passwordHash");
+    if (!user) return res.status(404).json({ msg: "User not found" });
+    res.json(user);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+// UPDATE USER PROFILE
+exports.updateProfile = async (req, res) => {
+  try {
+    const { name, email, avatar, grade, field, bio } = req.body;
+    const user = await User.findById(req.user.id);
+
+    if (!user) return res.status(404).json({ msg: "User not found" });
+
+    if (name) user.name = name;
+    if (email) {
+      const emailExists = await User.findOne({ email: email.toLowerCase(), _id: { $ne: user._id } });
+      if (emailExists) return res.status(400).json({ msg: "Email already in use" });
+      user.email = email.toLowerCase();
+    }
+    if (avatar !== undefined) user.avatar = avatar;
+    if (grade !== undefined) user.grade = grade;
+    if (field !== undefined) user.field = field;
+    if (bio !== undefined) user.bio = bio;
+
+    await user.save();
+
+    const userResponse = user.toObject();
+    delete userResponse.passwordHash;
+
+    res.json({ msg: "Profile updated successfully", user: userResponse });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+// CHANGE PASSWORD
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const user = await User.findById(req.user.id);
+
+    if (!user) return res.status(404).json({ msg: "User not found" });
+
+    if (user.authProvider === "google") {
+      return res.status(400).json({ msg: "Accounts using Google login cannot change password here." });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isMatch) return res.status(400).json({ msg: "Incorrect current password" });
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ msg: "New password must be at least 6 characters" });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.json({ msg: "Password changed successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+// DELETE ACCOUNT
+exports.deleteAccount = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ msg: "User not found" });
+
+    await User.findByIdAndDelete(req.user.id);
+    // Note: In a real app, you might want to delete their notes, quizzes, focus sessions etc.
+    res.json({ msg: "Account deleted successfully" });
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ msg: "Server error" });
   }
 };

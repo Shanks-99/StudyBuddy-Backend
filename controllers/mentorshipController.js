@@ -285,7 +285,7 @@ exports.acceptSessionRequest = async (req, res) => {
             await createNotification(
                 session.student,
                 "Mentorship Session Accepted",
-                `Your session with ${mentorName} for ${session.subject} has been accepted!`,
+                `Your session request to ${mentorName} for ${session.subject} on ${session.dateLabel} at ${session.timeSlot} has been accepted!`,
                 "mentorship_status",
                 "/student-dashboard"
             );
@@ -326,7 +326,7 @@ exports.declineSessionRequest = async (req, res) => {
             await createNotification(
                 session.student,
                 "Mentorship Session Declined",
-                `Sorry, ${mentorName} declined your session request for ${session.subject}.`,
+                `Sorry, your session request to ${mentorName} for ${session.subject} on ${session.dateLabel} at ${session.timeSlot} has been declined.`,
                 "mentorship_status",
                 "/mentorship"
             );

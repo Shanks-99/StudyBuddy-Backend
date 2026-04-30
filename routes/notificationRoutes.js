@@ -5,6 +5,7 @@ const { getNotifications, markAsRead, clearAll } = require('../controllers/notif
 
 router.get('/', protect, getNotifications);
 router.put('/:id/read', protect, markAsRead);
+router.put('/mark-all-read', protect, markAllAsRead);
 router.delete('/clear', protect, clearAll);
 
 module.exports = router;

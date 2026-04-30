@@ -29,6 +29,15 @@ exports.clearAll = async (req, res) => {
     }
 };
 
+exports.markAllAsRead = async (req, res) => {
+    try {
+        await Notification.updateMany({ recipient: req.user.id, isRead: false }, { isRead: true });
+        res.json({ message: "All notifications marked as read" });
+    } catch (error) {
+        res.status(500).json({ message: "Error marking notifications as read" });
+    }
+};
+
 // Internal utility to create notifications
 exports.createNotification = async (recipientId, title, message, type, link = null) => {
     try {

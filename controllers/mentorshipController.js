@@ -60,6 +60,11 @@ exports.upsertMyMentorProfile = async (req, res) => {
             specializedCourses,
             description,
             degreeFiles = [],
+            qualification,
+            skillLevel,
+            tags = [],
+            profilePicture,
+            hourlyRate,
             status,
         } = req.body;
 
@@ -67,22 +72,40 @@ exports.upsertMyMentorProfile = async (req, res) => {
             return res.status(400).json({ msg: "Missing required profile fields" });
         }
 
-        const payload = {
-            mentor: req.user.id,
-            name: String(name).trim(),
-            email: String(email).trim().toLowerCase(),
-            specializedCourses: String(specializedCourses).trim(),
-            description: String(description).trim(),
-            degreeFiles: Array.isArray(degreeFiles) ? degreeFiles : [],
-            status: status || "pending",
-            submittedAt: new Date(),
-        };
+        let profile = await MentorProfile.findOne({ mentor: req.user.id });
 
-        const profile = await MentorProfile.findOneAndUpdate(
-            { mentor: req.user.id },
-            payload,
-            { new: true, upsert: true }
-        );
+        if (profile) {
+            // Update
+            profile.name = name;
+            profile.email = email;
+            profile.specializedCourses = specializedCourses;
+            profile.description = description;
+            profile.degreeFiles = degreeFiles;
+            profile.qualification = qualification;
+            profile.skillLevel = skillLevel;
+            profile.tags = tags;
+            profile.profilePicture = profilePicture;
+            profile.hourlyRate = hourlyRate !== undefined ? Number(hourlyRate) : 0;
+            profile.status = "approved"; 
+            await profile.save();
+        } else {
+            // Create
+            profile = new MentorProfile({
+                mentor: req.user.id,
+                name,
+                email,
+                specializedCourses,
+                description,
+                degreeFiles,
+                qualification,
+                skillLevel,
+                tags,
+                profilePicture,
+                hourlyRate: hourlyRate !== undefined ? Number(hourlyRate) : 0,
+                status: "approved",
+            });
+            await profile.save();
+        }
 
         res.json({ profile });
     } catch (error) {
@@ -344,23 +367,55 @@ exports.getUpcomingSessionsForMentor = async (req, res) => {
         if (!ensureTeacher(req, res)) return;
 
         const mentorName = req.query.mentorName || req.user.name;
-        const sessions = await MentorshipSession.find({
+        const allSessions = await MentorshipSession.find({
             mentorName,
             status: "accepted",
         }).sort({ createdAt: -1 });
 
-        res.json({ sessions });
+        // Filter for upcoming only (session ends 1 hour after start)
+        const now = new Date();
+        const upcoming = allSessions.filter(session => {
+            const start = parseSessionDateTime(session.dateLabel, session.timeSlot);
+            if (!start) return false;
+            const end = new Date(start.getTime() + 60 * 60 * 1000);
+            return end > now;
+        });
+
+        res.json({ sessions: upcoming });
     } catch (error) {
         console.error("getUpcomingSessionsForMentor error:", error);
         res.status(500).json({ msg: "Failed to fetch mentor upcoming sessions" });
     }
 };
 
+// Helper for parsing session date/time strings
+function parseSessionDateTime(dateLabel, timeSlot) {
+    try {
+        const date = new Date(dateLabel);
+        if (isNaN(date.getTime())) return null;
+
+        const timeMatch = timeSlot.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        if (!timeMatch) return null;
+
+        let hour = parseInt(timeMatch[1]);
+        const minute = parseInt(timeMatch[2]);
+        const meridiem = timeMatch[3].toUpperCase();
+
+        if (meridiem === 'PM' && hour !== 12) hour += 12;
+        if (meridiem === 'AM' && hour === 12) hour = 0;
+
+        date.setHours(hour, minute, 0, 0);
+        return date;
+    } catch (e) {
+        return null;
+    }
+}
+
 exports.getUpcomingSessionsForStudent = async (req, res) => {
     try {
         if (!ensureStudent(req, res)) return;
 
-        const sessions = await MentorshipSession.find({
+        const allSessions = await MentorshipSession.find({
             $or: [
                 { student: req.user.id },
                 { studentName: req.user.name },
@@ -368,7 +423,15 @@ exports.getUpcomingSessionsForStudent = async (req, res) => {
             status: "accepted",
         }).sort({ createdAt: -1 });
 
-        res.json({ sessions });
+        const now = new Date();
+        const upcoming = allSessions.filter(session => {
+            const start = parseSessionDateTime(session.dateLabel, session.timeSlot);
+            if (!start) return false;
+            const end = new Date(start.getTime() + 60 * 60 * 1000);
+            return end > now;
+        });
+
+        res.json({ sessions: upcoming });
     } catch (error) {
         console.error("getUpcomingSessionsForStudent error:", error);
         res.status(500).json({ msg: "Failed to fetch student upcoming sessions" });

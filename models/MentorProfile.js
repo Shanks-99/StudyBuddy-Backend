@@ -33,6 +33,27 @@ const mentorProfileSchema = new mongoose.Schema(
             type: [String],
             default: [],
         },
+        qualification: {
+            type: String,
+            trim: true,
+        },
+        skillLevel: {
+            type: String,
+            enum: ["Beginner", "Intermediate", "Advanced"],
+            default: "Beginner",
+        },
+        tags: {
+            type: [String],
+            default: [],
+        },
+        profilePicture: {
+            type: String,
+            default: "",
+        },
+        hourlyRate: {
+            type: Number,
+            default: 0,
+        },
         status: {
             type: String,
             enum: ["missing", "pending", "approved", "rejected"],

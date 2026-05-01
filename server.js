@@ -12,6 +12,7 @@ const quizRoutes = require("./routes/quizRoutes");
 const focusRoutes = require("./routes/focusRoutes");
 const studyRoomRoutes = require("./routes/studyRoomRoutes");
 const mentorshipRoutes = require("./routes/mentorshipRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 
 // Initialize express app FIRST
 const app = express();
@@ -178,6 +179,7 @@ app.use("/api/focus", focusRoutes);
 app.use("/api/studyrooms", studyRoomRoutes);
 app.use("/api/mentorship", mentorshipRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Test Route
 app.get("/", (req, res) => {

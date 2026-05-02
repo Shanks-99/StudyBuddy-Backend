@@ -1,5 +1,6 @@
 const Quiz = require("../models/Quiz");
 const { generateContent } = require("../services/ollamaService");
+const { createNotification } = require("./notificationController");
 
 // Helper: extract complete question objects from potentially truncated JSON
 function extractQuestions(text) {
@@ -113,6 +114,14 @@ exports.generateQuiz = async (req, res) => {
 
         console.log("Quiz created successfully:", quiz._id);
         io.emit("quiz_generation_complete", { quizId: quiz._id });
+
+        await createNotification(
+            instructorId,
+            "Quiz Generated",
+            `Your AI quiz on "${topic}" has been successfully generated with ${questions.length} questions.`,
+            "system",
+            "/instructor-quizzes"
+        );
 
         res.status(201).json({ quiz });
     } catch (error) {

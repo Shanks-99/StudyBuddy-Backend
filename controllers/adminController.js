@@ -4,6 +4,7 @@ const MentorshipSession = require("../models/MentorshipSession");
 const FocusSession = require("../models/FocusSession");
 const Report = require("../models/Report");
 const StudyRoom = require("../models/StudyRoom");
+const { createNotification } = require("./notificationController");
 
 // ── Dashboard Stats ──
 exports.getDashboardStats = async (req, res) => {
@@ -236,6 +237,23 @@ exports.updateMentorStatus = async (req, res) => {
         ).populate("mentor", "name email avatar");
 
         if (!profile) return res.status(404).json({ msg: "Profile not found" });
+
+        // Notify Mentor
+        if (profile.mentor && profile.mentor._id) {
+            const statusMessage = status === "approved" 
+                ? "Your mentor profile has been approved! You can now access all mentor features."
+                : status === "rejected"
+                ? "Your mentor profile was reviewed and requires changes. Please check your dashboard."
+                : "Your mentor profile status has been updated to pending.";
+
+            await createNotification(
+                profile.mentor._id,
+                `Profile ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+                statusMessage,
+                "mentorship_status",
+                "/instructor-dashboard"
+            );
+        }
 
         res.json({ profile, msg: `Mentor ${status} successfully` });
     } catch (error) {

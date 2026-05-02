@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const { OAuth2Client } = require("google-auth-library");
 const axios = require("axios");
 const { sendVerificationEmail, sendPasswordResetEmail } = require("../config/emailService");
+const MentorProfile = require("../models/MentorProfile");
 
 const googleClient = new OAuth2Client();
 
@@ -591,6 +592,11 @@ exports.deleteAccount = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ msg: "User not found" });
+
+    // Cleanup related data
+    if (user.role === "teacher") {
+        await MentorProfile.deleteMany({ mentor: user._id });
+    }
 
     await User.findByIdAndDelete(req.user.id);
     // Note: In a real app, you might want to delete their notes, quizzes, focus sessions etc.

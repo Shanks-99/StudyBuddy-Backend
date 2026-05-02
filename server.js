@@ -13,6 +13,7 @@ const focusRoutes = require("./routes/focusRoutes");
 const studyRoomRoutes = require("./routes/studyRoomRoutes");
 const mentorshipRoutes = require("./routes/mentorshipRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const { startJob: startSessionReminderJob } = require("./jobs/sessionReminderJob");
 
 // Initialize express app FIRST
 const app = express();
@@ -188,4 +189,7 @@ app.get("/", (req, res) => {
 
 // Start Server
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+server.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    startSessionReminderJob();
+});

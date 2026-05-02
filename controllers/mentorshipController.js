@@ -169,7 +169,7 @@ exports.getAvailabilityByMentorName = async (req, res) => {
             return res.status(400).json({ msg: "mentorName is required" });
         }
 
-        const profile = await MentorProfile.findOne({ name: mentorName }).lean();
+        const profile = await MentorProfile.findOne({ name: mentorName, status: "approved" }).lean();
         if (!profile) {
             return res.json({ availability: DEFAULT_AVAILABILITY });
         }
@@ -187,8 +187,18 @@ exports.getAvailabilityByMentorName = async (req, res) => {
 
 exports.listMentorsForStudents = async (_req, res) => {
     try {
-        const profiles = await MentorProfile.find().sort({ updatedAt: -1 });
-        res.json({ mentors: profiles });
+        // Find approved mentors
+        const allApprovedProfiles = await MentorProfile.find({ status: "approved" }).sort({ updatedAt: -1 });
+        
+        // Filter out mentors who haven't set any availability
+        const profilesWithAvailability = allApprovedProfiles.filter(profile => {
+            const hasAvailability = Object.values(profile.weeklyAvailability || {}).some(
+                daySlots => Array.isArray(daySlots) && daySlots.length > 0
+            );
+            return hasAvailability;
+        });
+
+        res.json({ mentors: profilesWithAvailability });
     } catch (error) {
         console.error("listMentorsForStudents error:", error);
         res.status(500).json({ msg: "Failed to fetch mentors" });

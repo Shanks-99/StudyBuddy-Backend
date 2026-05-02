@@ -86,7 +86,7 @@ exports.upsertMyMentorProfile = async (req, res) => {
             profile.tags = tags;
             profile.profilePicture = profilePicture;
             profile.hourlyRate = hourlyRate !== undefined ? Number(hourlyRate) : 0;
-            profile.status = "approved"; 
+            profile.status = "pending"; 
             await profile.save();
         } else {
             // Create
@@ -102,7 +102,7 @@ exports.upsertMyMentorProfile = async (req, res) => {
                 tags,
                 profilePicture,
                 hourlyRate: hourlyRate !== undefined ? Number(hourlyRate) : 0,
-                status: "approved",
+                status: "pending",
             });
             await profile.save();
         }

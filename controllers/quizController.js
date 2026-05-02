@@ -1,81 +1,107 @@
 const Quiz = require("../models/Quiz");
-const axios = require("axios");
+const { generateContent } = require("../services/ollamaService");
+
+// Helper: extract complete question objects from potentially truncated JSON
+function extractQuestions(text) {
+    let cleaned = text.trim();
+    cleaned = cleaned.replace(/```json/g, '').replace(/```/g, '').trim();
+
+    // Try full parse first
+    const firstBracket = cleaned.indexOf('[');
+    const lastBracket = cleaned.lastIndexOf(']');
+    if (firstBracket !== -1 && lastBracket !== -1) {
+        try {
+            const arr = JSON.parse(cleaned.substring(firstBracket, lastBracket + 1));
+            if (Array.isArray(arr)) return arr;
+        } catch (_) { /* fall through to manual extraction */ }
+    }
+
+    // Manual extraction: find complete {...} blocks (handles truncated JSON)
+    const questions = [];
+    let depth = 0, start = -1;
+    for (let i = 0; i < cleaned.length; i++) {
+        if (cleaned[i] === '{') {
+            if (depth === 0) start = i;
+            depth++;
+        } else if (cleaned[i] === '}') {
+            depth--;
+            if (depth === 0 && start !== -1) {
+                try {
+                    const obj = JSON.parse(cleaned.substring(start, i + 1));
+                    if (obj.question && Array.isArray(obj.options)) {
+                        questions.push(obj);
+                    }
+                } catch (_) { /* skip malformed object */ }
+                start = -1;
+            }
+        }
+    }
+    return questions;
+}
+
+// Generate a small batch of questions
+async function generateBatch(topic, difficulty, count) {
+    const prompt = `You are a strict JSON API. Generate ${count} multiple choice questions about "${topic}" at ${difficulty} difficulty level.
+Return ONLY a valid JSON array of objects. Do NOT return anything else. No markdown formatting (\`\`\`json).
+Example format:
+[
+  {
+    "question": "What does HTML stand for?",
+    "options": ["Hyper Text Markup Language", "Hyperlinks and Text Markup Language", "Home Tool Markup Language", "Hyper Tool Markup Language"],
+    "correctAnswer": 0,
+    "explanation": "HTML stands for Hyper Text Markup Language."
+  }
+]`;
+
+    const rawText = await generateContent(prompt);
+    return extractQuestions(rawText);
+}
 
 // AI-POWERED QUIZ GENERATION
 exports.generateQuiz = async (req, res) => {
     const io = req.app.get("io");
     try {
-        const { topic, difficulty, numQuestions } = req.body;
-        const instructorId = req.user.id; // From JWT middleware
+        const { topic, difficulty, numQuestions: rawNum } = req.body;
+        const numQuestions = parseInt(rawNum) || 5;
+        const instructorId = req.user.id;
 
         io.emit("quiz_generation_start", { topic, difficulty });
         console.log(`Generating quiz: topic=${topic}, difficulty=${difficulty}, numQuestions=${numQuestions}`);
 
-        const prompt = `You are a quiz generator. Generate exactly ${numQuestions} multiple choice questions about "${topic}" at ${difficulty} difficulty level. 
-Strictly follow this JSON format:
-[
-  {
-    "question": "Question text",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "correctAnswer": 0,
-    "explanation": "Explanation"
-  }
-]
-Do not include any markdown formatting like \`\`\`json or \`\`\`. Return ONLY the raw JSON array.`;
+        // Generate in batches of 3 to avoid model token limit truncation
+        const BATCH_SIZE = 3;
+        const allQuestions = [];
+        const totalBatches = Math.ceil(numQuestions / BATCH_SIZE);
 
-        // Call Ollama API
-        io.emit("quiz_generation_progress", { message: "Contacting AI model..." });
-        console.log("Calling Ollama API...");
-        const ollamaResponse = await axios.post(
-            "http://localhost:11434/api/generate",
-            {
-                model: "gemma3:latest",
-                prompt: prompt,
-                stream: false,
-                options: {
-                    temperature: 0.7
-                }
-            },
-            { timeout: 300000 } // 300 second timeout
-        );
+        for (let batch = 0; batch < totalBatches; batch++) {
+            const remaining = numQuestions - allQuestions.length;
+            const batchCount = Math.min(BATCH_SIZE, remaining);
 
-        io.emit("quiz_generation_progress", { message: "AI response received. Processing..." });
-        console.log("Ollama response received");
-        let generatedText = ollamaResponse.data.response.trim();
-        console.log("Generated text preview:", generatedText.substring(0, 200));
+            io.emit("quiz_generation_progress", {
+                message: `Generating questions (batch ${batch + 1}/${totalBatches})...`
+            });
+            console.log(`Batch ${batch + 1}/${totalBatches}: generating ${batchCount} questions...`);
 
-        // Clean up the response
-        // Remove markdown code blocks if present
-        generatedText = generatedText.replace(/```json/g, '').replace(/```/g, '');
+            const batchQuestions = await generateBatch(topic, difficulty, batchCount);
+            console.log(`Batch ${batch + 1} returned ${batchQuestions.length} questions`);
 
-        // Find the first '[' and last ']'
-        const firstBracket = generatedText.indexOf('[');
-        const lastBracket = generatedText.lastIndexOf(']');
+            allQuestions.push(...batchQuestions);
 
-        let questions;
-        try {
-            if (firstBracket !== -1 && lastBracket !== -1) {
-                const jsonString = generatedText.substring(firstBracket, lastBracket + 1);
-                questions = JSON.parse(jsonString);
-                console.log(`Parsed ${questions.length} questions`);
-            } else {
-                throw new Error("No JSON array found in response");
-            }
-        } catch (parseError) {
-            console.error("Parse error:", parseError.message);
-            console.error("Full generated text:", generatedText);
+            if (allQuestions.length >= numQuestions) break;
+        }
 
-            io.emit("quiz_generation_error", { error: "Failed to parse AI response" });
-
+        if (allQuestions.length === 0) {
+            io.emit("quiz_generation_error", { error: "AI failed to generate any valid questions" });
             return res.status(500).json({
-                msg: "Failed to parse AI response. The AI model might be hallucinating.",
-                error: parseError.message,
-                rawResponse: generatedText
+                msg: "AI failed to generate any valid questions. Please try again."
             });
         }
 
+        // Trim to requested count
+        const questions = allQuestions.slice(0, numQuestions);
+        console.log(`Total valid questions: ${questions.length}/${numQuestions}`);
+
         io.emit("quiz_generation_progress", { message: "Saving quiz to database..." });
-        // Create quiz with generated questions
         const quiz = await Quiz.create({
             title: `${topic} Quiz`,
             description: `AI-generated quiz on ${topic}`,

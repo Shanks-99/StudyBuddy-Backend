@@ -1,11 +1,16 @@
 const nodemailer = require("nodemailer");
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
-  pool: true, // Use a pool of connections instead of creating a new one for every email
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false, // Use STARTTLS
+  pool: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
+  },
+  tls: {
+    rejectUnauthorized: false
   }
 });
 

@@ -60,32 +60,24 @@ exports.registerUser = async (req, res) => {
     const existingUser = await User.findOne({ email: normalizedEmail });
 
     if (existingUser) {
-      // If user exists but is NOT verified, allow re-registration (update their data)
+      // Email verification is disabled for this build.
+      // For backwards compatibility, allow re-registration if the user was previously unverified.
       if (existingUser.isVerified === false) {
         const hash = await bcrypt.hash(password, 10);
-        const code = generateVerificationCode();
-        const hashedCode = await bcrypt.hash(code, 10);
 
         existingUser.name = name;
         existingUser.passwordHash = hash;
         existingUser.role = normalizedRole;
-        existingUser.verificationCode = hashedCode;
-        existingUser.verificationCodeExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+        existingUser.isVerified = true;
+        existingUser.verificationCode = undefined;
+        existingUser.verificationCodeExpires = undefined;
 
         await existingUser.save();
 
-        // Send verification email
-        try {
-          await sendVerificationEmail(normalizedEmail, code, name);
-        } catch (emailErr) {
-          console.error("Registration Email Error (Existing User):", emailErr);
-          return res.status(500).json({ msg: `Failed to send verification email: ${emailErr.message}` });
-        }
-
         return res.status(200).json({
-          msg: "Verification code sent to your email",
+          msg: "Registration successful. You can now log in.",
           email: normalizedEmail,
-          requiresVerification: true
+          requiresVerification: false
         });
       }
 
@@ -95,36 +87,23 @@ exports.registerUser = async (req, res) => {
     // Hash password
     const hash = await bcrypt.hash(password, 10);
 
-    // Generate verification code
-    const code = generateVerificationCode();
-    const hashedCode = await bcrypt.hash(code, 10);
-
-    // Create user with isVerified: false
+    // Email verification is disabled for this build.
+    // Create user with isVerified: true
     const newUser = await User.create({
       name,
       email: normalizedEmail,
       passwordHash: hash,
       role: normalizedRole,
       authProvider: "local",
-      isVerified: false,
-      verificationCode: hashedCode,
-      verificationCodeExpires: new Date(Date.now() + 10 * 60 * 1000) // 10 min
+      isVerified: true,
+      verificationCode: undefined,
+      verificationCodeExpires: undefined
     });
 
-    // Send verification email
-    try {
-      await sendVerificationEmail(normalizedEmail, code, name);
-    } catch (emailErr) {
-      console.error("Registration Email Error (New User):", emailErr);
-      // Clean up the user if email fails
-      await User.deleteOne({ _id: newUser._id });
-      return res.status(500).json({ msg: `Failed to send verification email: ${emailErr.message}` });
-    }
-
     res.status(201).json({
-      msg: "Verification code sent to your email",
+      msg: "Registration successful. You can now log in.",
       email: normalizedEmail,
-      requiresVerification: true
+      requiresVerification: false
     });
 
   } catch (error) {
@@ -136,37 +115,30 @@ exports.registerUser = async (req, res) => {
 // VERIFY REGISTRATION CODE (Step 2)
 exports.verifyRegistration = async (req, res) => {
   try {
-    const { email, code } = req.body;
+    const { email } = req.body;
     const normalizedEmail = email?.trim().toLowerCase();
 
-    if (!normalizedEmail || !code) {
-      return res.status(400).json({ msg: "Email and verification code are required" });
+    // Email verification is disabled for this build.
+    // Keep this endpoint for compatibility with existing frontend flows.
+    if (!normalizedEmail) {
+      return res.status(400).json({ msg: "Email is required" });
     }
 
-    const user = await User.findOne({ email: normalizedEmail, isVerified: false });
+    const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
-      return res.status(400).json({ msg: "No pending verification found for this email" });
+      return res.status(400).json({ msg: "User not found" });
     }
 
-    // Check if code has expired
-    if (!user.verificationCodeExpires || user.verificationCodeExpires < new Date()) {
-      return res.status(400).json({ msg: "Verification code has expired. Please request a new one." });
+    // Mark as verified and clear code fields (if present)
+    if (user.isVerified === false) {
+      user.isVerified = true;
+      user.verificationCode = undefined;
+      user.verificationCodeExpires = undefined;
+      await user.save();
     }
 
-    // Compare the code
-    const isMatch = await bcrypt.compare(code, user.verificationCode);
-    if (!isMatch) {
-      return res.status(400).json({ msg: "Invalid verification code" });
-    }
-
-    // Mark as verified and clear code fields
-    user.isVerified = true;
-    user.verificationCode = undefined;
-    user.verificationCodeExpires = undefined;
-    await user.save();
-
-    res.json({ msg: "Email verified successfully! You can now log in." });
+    res.json({ msg: "Email verification is disabled. You can now log in." });
 
   } catch (error) {
     console.log(error);
@@ -184,42 +156,8 @@ exports.resendVerificationCode = async (req, res) => {
       return res.status(400).json({ msg: "Email is required" });
     }
 
-    const user = await User.findOne({ email: normalizedEmail, isVerified: false });
-
-    if (!user) {
-      return res.status(400).json({ msg: "No pending verification found for this email" });
-    }
-
-    // Rate limit: check if last code was sent less than 60 seconds ago
-    if (user.verificationCodeExpires) {
-      const codeCreatedAt = new Date(user.verificationCodeExpires.getTime() - 10 * 60 * 1000);
-      const secondsSinceLastSend = (Date.now() - codeCreatedAt.getTime()) / 1000;
-      if (secondsSinceLastSend < 60) {
-        const waitSeconds = Math.ceil(60 - secondsSinceLastSend);
-        return res.status(429).json({
-          msg: `Please wait ${waitSeconds} seconds before requesting a new code`,
-          retryAfter: waitSeconds
-        });
-      }
-    }
-
-    // Generate new code
-    const code = generateVerificationCode();
-    const hashedCode = await bcrypt.hash(code, 10);
-
-    user.verificationCode = hashedCode;
-    user.verificationCodeExpires = new Date(Date.now() + 10 * 60 * 1000);
-    await user.save();
-
-    // Send email
-    try {
-      await sendVerificationEmail(normalizedEmail, code, user.name);
-    } catch (emailErr) {
-      console.error("Resend Verification Email Error:", emailErr);
-      return res.status(500).json({ msg: `Failed to resend verification email: ${emailErr.message}` });
-    }
-
-    res.json({ msg: "New verification code sent to your email" });
+    // Email verification is disabled for this build.
+    res.json({ msg: "Email verification is disabled. No code was sent." });
 
   } catch (error) {
     console.log(error);
@@ -243,13 +181,13 @@ exports.loginUser = async (req, res) => {
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) return res.status(400).json({ msg: "User not found" });
 
-    // Check if user is verified (treat undefined/null as verified for backwards compat)
+    // Email verification is disabled for this build.
+    // Auto-verify any legacy unverified users so login doesn't get blocked.
     if (user.isVerified === false) {
-      return res.status(403).json({
-        msg: "Please verify your email first. Check your inbox for the verification code.",
-        requiresVerification: true,
-        email: normalizedEmail
-      });
+      user.isVerified = true;
+      user.verificationCode = undefined;
+      user.verificationCodeExpires = undefined;
+      await user.save();
     }
 
     if (user.authProvider === "google") {

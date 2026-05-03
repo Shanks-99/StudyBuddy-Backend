@@ -78,8 +78,8 @@ exports.registerUser = async (req, res) => {
         try {
           await sendVerificationEmail(normalizedEmail, code, name);
         } catch (emailErr) {
-          console.error("Email send error:", emailErr.message);
-          return res.status(500).json({ msg: "Failed to send verification email. Please try again." });
+          console.error("Registration Email Error (Existing User):", emailErr);
+          return res.status(500).json({ msg: `Failed to send verification email: ${emailErr.message}` });
         }
 
         return res.status(200).json({
@@ -115,10 +115,10 @@ exports.registerUser = async (req, res) => {
     try {
       await sendVerificationEmail(normalizedEmail, code, name);
     } catch (emailErr) {
-      console.error("Email send error:", emailErr.message);
+      console.error("Registration Email Error (New User):", emailErr);
       // Clean up the user if email fails
       await User.deleteOne({ _id: newUser._id });
-      return res.status(500).json({ msg: "Failed to send verification email. Please try again." });
+      return res.status(500).json({ msg: `Failed to send verification email: ${emailErr.message}` });
     }
 
     res.status(201).json({
@@ -215,8 +215,8 @@ exports.resendVerificationCode = async (req, res) => {
     try {
       await sendVerificationEmail(normalizedEmail, code, user.name);
     } catch (emailErr) {
-      console.error("Email resend error:", emailErr.message);
-      return res.status(500).json({ msg: "Failed to resend verification email. Please try again." });
+      console.error("Resend Verification Email Error:", emailErr);
+      return res.status(500).json({ msg: `Failed to resend verification email: ${emailErr.message}` });
     }
 
     res.json({ msg: "New verification code sent to your email" });
@@ -423,8 +423,8 @@ exports.forgotPassword = async (req, res) => {
     try {
       await sendPasswordResetEmail(normalizedEmail, code, user.name);
     } catch (emailErr) {
-      console.error("Reset email error:", emailErr.message);
-      return res.status(500).json({ msg: "Failed to send reset email. Please try again." });
+      console.error("Forgot Password Email Error:", emailErr);
+      return res.status(500).json({ msg: `Failed to send reset email: ${emailErr.message}` });
     }
 
     res.json({ msg: "Password reset code sent to your email", email: normalizedEmail });

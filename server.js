@@ -13,6 +13,9 @@ const focusRoutes = require("./routes/focusRoutes");
 const studyRoomRoutes = require("./routes/studyRoomRoutes");
 const mentorshipRoutes = require("./routes/mentorshipRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const studyBuddyRoutes = require("./routes/studyBuddyRoutes");
+const communityRoutes = require("./routes/communityRoutes");
+const resourceRoutes = require("./routes/resourceRoutes");
 const { startJob: startSessionReminderJob } = require("./jobs/sessionReminderJob");
 
 // Initialize express app FIRST
@@ -49,6 +52,7 @@ app.set("io", io);
 // Keep track of users in rooms (simple memory implementation)
 // Format: { roomId: [{ socketId, userId, name }] }
 const roomUsers = {};
+const buddyRoomUsers = {};
 
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
@@ -144,9 +148,84 @@ io.on("connection", (socket) => {
     io.in(roomId).socketsLeave(roomId);
   });
 
+  // --- Study Buddy Socket Logic ---
+  socket.on("join-buddy-room", ({ roomId, userId, name }) => {
+    if (!userId) {
+      console.error(`[Socket] join-buddy-room failed: Missing userId for user ${name}`);
+      return;
+    }
+
+    console.log(`[Socket] User ${name} (${userId}) attempting to join buddy room ${roomId}`);
+
+    if (!buddyRoomUsers[roomId]) {
+      buddyRoomUsers[roomId] = [];
+    }
+
+    // Strict 2-person constraint check:
+    const activeUserIds = buddyRoomUsers[roomId].map(u => String(u.userId));
+    const isAlreadyInRoom = activeUserIds.includes(String(userId));
+
+    if (buddyRoomUsers[roomId].length >= 2 && !isAlreadyInRoom) {
+      console.log(`[Socket] Denied join to buddy room ${roomId} (full). Users:`, activeUserIds);
+      socket.emit("buddy-room-full", { message: "This room already has 2 participants." });
+      return;
+    }
+
+    // Cleanup stale entries
+    buddyRoomUsers[roomId] = buddyRoomUsers[roomId].filter(u => String(u.userId) !== String(userId));
+
+    socket.join(roomId);
+    const newUser = { socketId: socket.id, userId, name };
+    buddyRoomUsers[roomId].push(newUser);
+
+    console.log(`[Socket] Buddy Room ${roomId} active participants:`, buddyRoomUsers[roomId].map(u => u.name));
+
+    // Broadcast updated participant list
+    io.to(roomId).emit("buddy-room-users", buddyRoomUsers[roomId]);
+
+    // Notify other user
+    socket.to(roomId).emit("buddy-user-joined", { socketId: socket.id, userId, name });
+  });
+
+  socket.on("send-buddy-message", async (data) => {
+    try {
+      const StudyBuddyMessage = require("./models/StudyBuddyMessage");
+      const newMsg = await StudyBuddyMessage.create({
+        roomId: data.roomId,
+        sender: data.sender,
+        text: data.text
+      });
+      await newMsg.populate("sender", "name");
+      io.to(data.roomId).emit("receive-buddy-message", newMsg);
+    } catch (err) {
+      console.error("[Buddy Chat] Error:", err);
+    }
+  });
+
+  socket.on("buddy-notes-change", ({ roomId, notes }) => {
+    socket.to(roomId).emit("buddy-notes-change", { notes });
+  });
+
+  socket.on("buddy-todo-change", ({ roomId, todos }) => {
+    socket.to(roomId).emit("buddy-todo-change", { todos });
+  });
+
+  socket.on("buddy-timer-control", ({ roomId, action, value }) => {
+    socket.to(roomId).emit("buddy-timer-control", { action, value });
+  });
+
+  socket.on("buddy-session-end", ({ roomId }) => {
+    io.to(roomId).emit("buddy-session-ended");
+    if (buddyRoomUsers[roomId]) {
+      delete buddyRoomUsers[roomId];
+    }
+    io.in(roomId).socketsLeave(roomId);
+  });
+
   // --- Disconnect Logic ---
   socket.on("disconnect", () => {
     console.log("[Socket] User disconnected:", socket.id);
+    
     // Find rooms this user was in, remove them, and broadcast new list
     for (const roomId in roomUsers) {
       if (roomUsers[roomId]) {
@@ -157,6 +236,20 @@ io.on("connection", (socket) => {
           console.log(`[Socket] Cleaned up socket ${socket.id} from room ${roomId}`);
           io.to(roomId).emit("room-users", roomUsers[roomId]);
           socket.to(roomId).emit("user-left", socket.id);
+        }
+      }
+    }
+
+    // Cleanup Study Buddy Rooms
+    for (const roomId in buddyRoomUsers) {
+      if (buddyRoomUsers[roomId]) {
+        const initialCount = buddyRoomUsers[roomId].length;
+        buddyRoomUsers[roomId] = buddyRoomUsers[roomId].filter(u => u.socketId !== socket.id);
+        
+        if (buddyRoomUsers[roomId].length !== initialCount) {
+          console.log(`[Socket] Cleaned up socket ${socket.id} from buddy room ${roomId}`);
+          io.to(roomId).emit("buddy-room-users", buddyRoomUsers[roomId]);
+          socket.to(roomId).emit("buddy-user-left", socket.id);
         }
       }
     }
@@ -181,6 +274,9 @@ app.use("/api/studyrooms", studyRoomRoutes);
 app.use("/api/mentorship", mentorshipRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/studybuddy", studyBuddyRoutes);
+app.use("/api/community", communityRoutes);
+app.use("/api/resources", resourceRoutes);
 
 // Test Route
 app.get("/", (req, res) => {

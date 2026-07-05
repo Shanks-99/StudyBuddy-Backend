@@ -324,7 +324,22 @@ exports.getGroupSessionsForStudent = async (req, res) => {
             .populate("mentor", "name")
             .sort({ createdAt: -1 });
 
-        res.json({ sessions });
+        // Attach mentor profile payment details dynamically
+        const sessionsWithProfiles = await Promise.all(sessions.map(async (session) => {
+            const sessionObj = session.toObject ? session.toObject() : session;
+            if (session.mentor) {
+                const profile = await MentorProfile.findOne({ mentor: session.mentor._id || session.mentor });
+                if (profile) {
+                    sessionObj.mentorProfile = {
+                        bankAccountNumber: profile.bankAccountNumber || "",
+                        easypaisaNumber: profile.easypaisaNumber || ""
+                    };
+                }
+            }
+            return sessionObj;
+        }));
+
+        res.json({ sessions: sessionsWithProfiles });
     } catch (error) {
         console.error("getGroupSessionsForStudent error:", error);
         res.status(500).json({ msg: "Failed to fetch group sessions" });

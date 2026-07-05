@@ -1,33 +1,38 @@
 const mongoose = require("mongoose");
 
-const communityReportSchema = new mongoose.Schema(
+const studentTaskSchema = new mongoose.Schema(
     {
-        postId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "CommunityPost",
-            required: true,
-        },
-        reportedBy: {
+        student: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
             required: true,
         },
-        reason: {
+        mentor: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            required: true,
+        },
+        mentorName: {
+            type: String,
+            required: true
+        },
+        title: {
             type: String,
             required: true,
             trim: true,
         },
+        description: {
+            type: String,
+            trim: true,
+            default: "",
+        },
         status: {
             type: String,
-            enum: ["pending", "reviewed", "dismissed"],
+            enum: ["pending", "completed"],
             default: "pending",
         },
     },
     { timestamps: true }
 );
 
-communityReportSchema.index({ status: 1, createdAt: -1 });
-communityReportSchema.index({ createdAt: -1 });
-
-module.exports = mongoose.model("CommunityReport", communityReportSchema);
-
+module.exports = mongoose.model("StudentTask", studentTaskSchema);

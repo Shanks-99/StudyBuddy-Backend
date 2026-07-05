@@ -155,6 +155,10 @@ exports.deleteUser = async (req, res) => {
 exports.getAllMentors = async (req, res) => {
     try {
         const { search, status, page = 1, limit = 20 } = req.query;
+        const pageNum = Number(page);
+        const limitNum = Number(limit);
+        const skipNum = (pageNum - 1) * limitNum;
+
         const userQuery = { role: "teacher" };
 
         if (search) {
@@ -164,46 +168,83 @@ exports.getAllMentors = async (req, res) => {
             ];
         }
 
-        const teachers = await User.find(userQuery)
-            .select("-passwordHash -verificationCode -resetCode")
-            .sort({ createdAt: -1 });
+        const mentorProfileCollectionName = MentorProfile.collection.name;
 
-        const teacherIds = teachers.map((t) => t._id);
+        const pipeline = [
+            { $match: userQuery },
+            { $sort: { createdAt: -1 } },
+            {
+                $lookup: {
+                    from: mentorProfileCollectionName,
+                    localField: "_id",
+                    foreignField: "mentor",
+                    as: "mentorProfile",
+                },
+            },
+            {
+                $unwind: {
+                    path: "$mentorProfile",
+                    preserveNullAndEmptyArrays: true,
+                },
+            },
+        ];
 
-        const profileQuery = { mentor: { $in: teacherIds } };
-        if (status) profileQuery.status = status;
-
-        const profiles = await MentorProfile.find(profileQuery);
-        const profileMap = {};
-        profiles.forEach((p) => {
-            profileMap[p.mentor.toString()] = p;
-        });
-
-        const mentors = teachers.map((t) => ({
-            ...t.toObject(),
-            mentorProfile: profileMap[t._id.toString()] || null,
-        }));
-
-        // Filter by status if requested
-        let filtered = mentors;
         if (status) {
-            filtered = mentors.filter(
-                (m) => m.mentorProfile && m.mentorProfile.status === status
-            );
+            pipeline.push({
+                $match: { "mentorProfile.status": status }
+            });
         }
 
-        const total = filtered.length;
-        const paginated = filtered.slice((page - 1) * limit, page * limit);
+        pipeline.push({
+            $facet: {
+                metadata: [{ $count: "total" }],
+                data: [
+                    { $skip: skipNum },
+                    { $limit: limitNum },
+                    {
+                        $project: {
+                            _id: 1,
+                            name: 1,
+                            email: 1,
+                            isBanned: 1,
+                            role: 1,
+                            createdAt: 1,
+                            isVerified: 1,
+                            avatar: 1,
+                            "mentorProfile._id": 1,
+                            "mentorProfile.qualification": 1,
+                            "mentorProfile.status": 1,
+                            "mentorProfile.hourlyRate": 1,
+                        },
+                    },
+                ],
+            },
+        });
+
+        const result = await User.aggregate(pipeline);
+        const total = result[0]?.metadata[0]?.total || 0;
+        const mentors = result[0]?.data || [];
 
         res.json({
-            mentors: paginated,
+            mentors,
             total,
-            page: Number(page),
-            pages: Math.ceil(total / limit),
+            page: pageNum,
+            pages: Math.ceil(total / limitNum),
         });
     } catch (error) {
         console.error("Admin getAllMentors error:", error);
         res.status(500).json({ msg: "Failed to fetch mentors" });
+    }
+};
+
+exports.getMentorProfileById = async (req, res) => {
+    try {
+        const profile = await MentorProfile.findById(req.params.profileId);
+        if (!profile) return res.status(404).json({ msg: "Profile not found" });
+        res.json({ profile });
+    } catch (error) {
+        console.error("Admin getMentorProfileById error:", error);
+        res.status(500).json({ msg: "Failed to fetch mentor profile" });
     }
 };
 

@@ -68,6 +68,16 @@ const mentorProfileSchema = new mongoose.Schema(
             fri: { type: [String], default: [] },
             sat: { type: [String], default: [] },
         },
+        bankAccountNumber: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+        easypaisaNumber: {
+            type: String,
+            default: "",
+            trim: true,
+        },
         submittedAt: {
             type: Date,
             default: Date.now,
@@ -76,4 +86,7 @@ const mentorProfileSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
+mentorProfileSchema.index({ status: 1, submittedAt: -1 });
+
 module.exports = mongoose.model("MentorProfile", mentorProfileSchema);
+

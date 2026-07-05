@@ -19,6 +19,7 @@ router.get("/students", authMiddleware, adminOnly, adminController.getAllStudent
 
 // Mentors
 router.get("/mentors", authMiddleware, adminOnly, adminController.getAllMentors);
+router.get("/mentors/:profileId/profile", authMiddleware, adminOnly, adminController.getMentorProfileById);
 
 // Approvals
 router.get("/approvals", authMiddleware, adminOnly, adminController.getPendingApprovals);

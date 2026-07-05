@@ -47,4 +47,8 @@ const reportSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
+reportSchema.index({ status: 1, createdAt: -1 });
+reportSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model("Report", reportSchema);
+

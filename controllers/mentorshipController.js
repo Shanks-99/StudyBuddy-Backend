@@ -66,10 +66,16 @@ exports.upsertMyMentorProfile = async (req, res) => {
             profilePicture,
             hourlyRate,
             status,
+            bankAccountNumber = "",
+            easypaisaNumber = "",
         } = req.body;
 
         if (!name || !email || !specializedCourses || !description) {
             return res.status(400).json({ msg: "Missing required profile fields" });
+        }
+
+        if (!String(bankAccountNumber || "").trim() && !String(easypaisaNumber || "").trim()) {
+            return res.status(400).json({ msg: "Please fill at least one of the payment details (Bank Account or Easypaisa)" });
         }
 
         let profile = await MentorProfile.findOne({ mentor: req.user.id });
@@ -86,6 +92,8 @@ exports.upsertMyMentorProfile = async (req, res) => {
             profile.tags = tags;
             profile.profilePicture = profilePicture;
             profile.hourlyRate = hourlyRate !== undefined ? Number(hourlyRate) : 0;
+            profile.bankAccountNumber = bankAccountNumber;
+            profile.easypaisaNumber = easypaisaNumber;
             profile.status = "pending"; 
             await profile.save();
         } else {
@@ -102,6 +110,8 @@ exports.upsertMyMentorProfile = async (req, res) => {
                 tags,
                 profilePicture,
                 hourlyRate: hourlyRate !== undefined ? Number(hourlyRate) : 0,
+                bankAccountNumber,
+                easypaisaNumber,
                 status: "pending",
             });
             await profile.save();
@@ -278,9 +288,11 @@ exports.getSessionRequestsForMentor = async (req, res) => {
     try {
         if (!ensureTeacher(req, res)) return;
 
-        const mentorName = req.query.mentorName || req.user.name;
         const requests = await MentorshipSession.find({
-            mentorName,
+            $or: [
+                { mentor: req.user.id },
+                { mentorName: req.user.name }
+            ],
             status: "pending",
         }).sort({ createdAt: -1 });
 
@@ -301,7 +313,10 @@ exports.acceptSessionRequest = async (req, res) => {
         const session = await MentorshipSession.findOneAndUpdate(
             {
                 _id: requestId,
-                mentorName,
+                $or: [
+                    { mentor: req.user.id },
+                    { mentorName: req.user.name }
+                ],
                 status: "pending",
             },
             {
@@ -342,7 +357,10 @@ exports.declineSessionRequest = async (req, res) => {
         const session = await MentorshipSession.findOneAndUpdate(
             {
                 _id: requestId,
-                mentorName,
+                $or: [
+                    { mentor: req.user.id },
+                    { mentorName: req.user.name }
+                ],
                 status: "pending",
             },
             {
@@ -377,9 +395,11 @@ exports.getUpcomingSessionsForMentor = async (req, res) => {
     try {
         if (!ensureTeacher(req, res)) return;
 
-        const mentorName = req.query.mentorName || req.user.name;
         const allSessions = await MentorshipSession.find({
-            mentorName,
+            $or: [
+                { mentor: req.user.id },
+                { mentorName: req.user.name }
+            ],
             status: { $in: ["accepted", "scheduled"] },
         }).sort({ createdAt: -1 });
 
@@ -442,7 +462,22 @@ exports.getUpcomingSessionsForStudent = async (req, res) => {
             return end > now;
         });
 
-        res.json({ sessions: upcoming });
+        // Attach mentor profile payment details dynamically
+        const sessionsWithProfiles = await Promise.all(upcoming.map(async (session) => {
+            const sessionObj = session.toObject ? session.toObject() : session;
+            if (session.mentor) {
+                const profile = await MentorProfile.findOne({ mentor: session.mentor });
+                if (profile) {
+                    sessionObj.mentorProfile = {
+                        bankAccountNumber: profile.bankAccountNumber || "",
+                        easypaisaNumber: profile.easypaisaNumber || ""
+                    };
+                }
+            }
+            return sessionObj;
+        }));
+
+        res.json({ sessions: sessionsWithProfiles });
     } catch (error) {
         console.error("getUpcomingSessionsForStudent error:", error);
         res.status(500).json({ msg: "Failed to fetch student upcoming sessions" });
@@ -570,5 +605,159 @@ exports.rejectSessionPayment = async (req, res) => {
     } catch (error) {
         console.error("rejectSessionPayment error:", error);
         res.status(500).json({ msg: "Failed to reject payment" });
+    }
+};
+
+exports.getMentorDashboardStats = async (req, res) => {
+    try {
+        if (!ensureTeacher(req, res)) return;
+
+        const mentorId = req.user.id;
+
+        // 1. Total Students Helped
+        // Get unique student names from MentorshipSession (accepted/scheduled)
+        const mentorshipSessions = await MentorshipSession.find({
+            $or: [
+                { mentor: mentorId },
+                { mentorName: req.user.name }
+            ],
+            status: { $in: ["accepted", "scheduled"] }
+        });
+        const mentorshipStudentNames = mentorshipSessions.map(s => s.studentName).filter(Boolean);
+        
+        // Get unique student names from GroupSession participants
+        const GroupSession = require("../models/GroupSession");
+        const groupSessions = await GroupSession.find({ mentor: mentorId });
+        const groupStudentNames = [];
+        groupSessions.forEach(s => {
+            if (s.participants) {
+                s.participants.forEach(p => {
+                    if (p.studentName) {
+                        groupStudentNames.push(p.studentName);
+                    }
+                });
+            }
+        });
+        
+        const allStudents = new Set([...mentorshipStudentNames, ...groupStudentNames]);
+        const totalStudentsHelped = allStudents.size;
+
+        // 2. Resources Uploaded
+        const Resource = require("../models/Resource");
+        const resourcesCount = await Resource.countDocuments({ uploader: mentorId });
+
+        // 3. Community Answers
+        const CommunityComment = require("../models/CommunityComment");
+        const commentsCount = await CommunityComment.countDocuments({ author: mentorId });
+
+        res.json({
+            totalStudentsHelped,
+            resourcesUploaded: resourcesCount,
+            communityAnswers: commentsCount
+        });
+    } catch (error) {
+        console.error("getMentorDashboardStats error:", error);
+        res.status(500).json({ msg: "Failed to fetch mentor dashboard stats" });
+    }
+};
+
+exports.getMyStudentsForMentor = async (req, res) => {
+    try {
+        const mentorId = req.user.id;
+        
+        // Find all mentorship sessions where this mentor is teaching
+        const sessions = await MentorshipSession.find({
+            $or: [
+                { mentor: mentorId },
+                { mentorName: req.user.name }
+            ]
+        }).populate("student", "name email avatar grade field bio");
+
+        // Fetch all resources uploaded by this mentor so they can view shared materials
+        const Resource = require("../models/Resource");
+        const mentorResources = await Resource.find({ uploader: mentorId });
+
+        // Map and group sessions by student
+        const studentMap = {};
+
+        sessions.forEach(session => {
+            // If student object is missing, try to resolve it from studentName
+            const studentId = session.student?._id?.toString() || session.studentName || "unknown";
+            
+            if (!studentMap[studentId]) {
+                studentMap[studentId] = {
+                    _id: session.student?._id || null,
+                    name: session.student?.name || session.studentName,
+                    email: session.student?.email || "N/A",
+                    avatar: session.student?.avatar || "",
+                    grade: session.student?.grade || "N/A",
+                    field: session.student?.field || "N/A",
+                    bio: session.student?.bio || "",
+                    subject: session.subject,
+                    lastSessionDate: session.dateLabel,
+                    status: "Inactive",
+                    sessionHistory: [],
+                };
+            }
+
+            // Append session details to history
+            studentMap[studentId].sessionHistory.push({
+                _id: session._id,
+                dateLabel: session.dateLabel,
+                timeSlot: session.timeSlot,
+                status: session.status,
+                paymentStatus: session.paymentStatus,
+                subject: session.subject,
+            });
+        });
+
+        // Convert the map to array and compute aggregated states
+        const studentsList = Object.values(studentMap).map(std => {
+            // Sort history by date descending
+            std.sessionHistory.sort((a, b) => {
+                const aDateStr = a.dateLabel ? (a.dateLabel.split(',')[1] || a.dateLabel) : "";
+                const bDateStr = b.dateLabel ? (b.dateLabel.split(',')[1] || b.dateLabel) : "";
+                const aDate = aDateStr ? new Date(aDateStr) : new Date(0);
+                const bDate = bDateStr ? new Date(bDateStr) : new Date(0);
+                
+                if (isNaN(aDate.getTime())) return 1;
+                if (isNaN(bDate.getTime())) return -1;
+                
+                return bDate - aDate;
+            });
+
+            // Find last session date
+            if (std.sessionHistory.length > 0) {
+                std.lastSessionDate = std.sessionHistory[0].dateLabel || "-";
+            } else {
+                std.lastSessionDate = "-";
+            }
+
+            // Determine aggregate status
+            const hasActive = std.sessionHistory.some(s => s.status && ["accepted", "scheduled"].includes(s.status.toLowerCase()));
+            const hasPending = std.sessionHistory.some(s => s.status && s.status.toLowerCase() === "pending");
+            const hasCompleted = std.sessionHistory.some(s => s.status && s.status.toLowerCase() === "completed");
+
+            if (hasActive) std.status = "Active";
+            else if (hasCompleted) std.status = "Completed";
+            else if (hasPending) std.status = "Pending";
+            else std.status = "Inactive";
+
+            // Attach matching shared resources
+            std.sharedResources = mentorResources.map(res => ({
+                id: res._id,
+                name: res.title || "Untitled Resource",
+                type: res.category || "Document",
+                downloads: res.downloadsCount || 0,
+                date: res.createdAt ? new Date(res.createdAt).toLocaleDateString() : "-"
+            }));
+
+            return std;
+        });
+
+        res.status(200).json(studentsList);
+    } catch (error) {
+        console.error("getMyStudentsForMentor error:", error);
+        res.status(500).json({ message: "Failed to fetch student connections", error: error.message });
     }
 };

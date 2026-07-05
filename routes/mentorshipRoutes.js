@@ -17,6 +17,8 @@ const {
     markSessionPaymentSent,
     verifySessionPayment,
     rejectSessionPayment,
+    getMentorDashboardStats,
+    getMyStudentsForMentor,
 } = require("../controllers/mentorshipController");
 
 const router = express.Router();
@@ -53,5 +55,7 @@ router.patch("/sessions/:sessionId/reject-payment", authMiddleware, rejectSessio
 
 router.get("/sessions/upcoming/mentor", authMiddleware, getUpcomingSessionsForMentor);
 router.get("/sessions/upcoming/student", authMiddleware, getUpcomingSessionsForStudent);
+router.get("/mentor-stats", authMiddleware, getMentorDashboardStats);
+router.get("/my-students", authMiddleware, getMyStudentsForMentor);
 
 module.exports = router;

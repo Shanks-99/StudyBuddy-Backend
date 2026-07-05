@@ -17,6 +17,8 @@ const studyBuddyRoutes = require("./routes/studyBuddyRoutes");
 const communityRoutes = require("./routes/communityRoutes");
 const resourceRoutes = require("./routes/resourceRoutes");
 const groupSessionRoutes = require("./routes/groupSessionRoutes");
+const directMessageRoutes = require("./routes/directMessageRoutes");
+const taskRoutes = require("./routes/taskRoutes");
 const { startJob: startSessionReminderJob } = require("./jobs/sessionReminderJob");
 
 // Initialize express app FIRST
@@ -296,6 +298,8 @@ app.use("/api/studybuddy", studyBuddyRoutes);
 app.use("/api/community", communityRoutes);
 app.use("/api/resources", resourceRoutes);
 app.use("/api/group-sessions", groupSessionRoutes);
+app.use("/api/messages", directMessageRoutes);
+app.use("/api/tasks", taskRoutes);
 
 // Test Route
 app.get("/", (req, res) => {

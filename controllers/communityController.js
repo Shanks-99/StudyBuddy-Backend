@@ -1,6 +1,7 @@
 const CommunityPost = require("../models/CommunityPost");
 const CommunityComment = require("../models/CommunityComment");
 const CommunityReport = require("../models/CommunityReport");
+const MentorProfile = require("../models/MentorProfile");
 
 // @desc    Create a new community post
 // @route   POST /api/community/posts
@@ -62,9 +63,27 @@ const getPosts = async (req, res) => {
             posts = posts.sort((a, b) => b.likes.length - a.likes.length);
         }
 
+        // Attach mentor profile payment details to populated group sessions
+        const postsWithProfiles = await Promise.all(posts.map(async (post) => {
+            const postObj = post.toObject ? post.toObject() : post;
+            if (postObj.groupSessionRef) {
+                const mentorId = postObj.groupSessionRef.mentor;
+                if (mentorId) {
+                    const profile = await MentorProfile.findOne({ mentor: mentorId });
+                    if (profile) {
+                        postObj.groupSessionRef.mentorProfile = {
+                            bankAccountNumber: profile.bankAccountNumber || "",
+                            easypaisaNumber: profile.easypaisaNumber || ""
+                        };
+                    }
+                }
+            }
+            return postObj;
+        }));
+
         const total = await CommunityPost.countDocuments(filter);
 
-        res.status(200).json({ posts, total, page: parseInt(page), totalPages: Math.ceil(total / parseInt(limit)) });
+        res.status(200).json({ posts: postsWithProfiles, total, page: parseInt(page), totalPages: Math.ceil(total / parseInt(limit)) });
     } catch (error) {
         console.error("Error fetching community posts:", error);
         res.status(500).json({ message: "Server Error" });
@@ -79,7 +98,22 @@ const getPostById = async (req, res) => {
             .populate("author", "name role avatar")
             .populate("groupSessionRef");
         if (!post) return res.status(404).json({ message: "Post not found" });
-        res.status(200).json(post);
+
+        const postObj = post.toObject ? post.toObject() : post;
+        if (postObj.groupSessionRef) {
+            const mentorId = postObj.groupSessionRef.mentor;
+            if (mentorId) {
+                const profile = await MentorProfile.findOne({ mentor: mentorId });
+                if (profile) {
+                    postObj.groupSessionRef.mentorProfile = {
+                        bankAccountNumber: profile.bankAccountNumber || "",
+                        easypaisaNumber: profile.easypaisaNumber || ""
+                    };
+                }
+            }
+        }
+
+        res.status(200).json(postObj);
     } catch (error) {
         console.error("Error fetching post:", error);
         res.status(500).json({ message: "Server Error" });
@@ -243,13 +277,26 @@ const reportPost = async (req, res) => {
 // @route   GET /api/community/reports
 const getReports = async (req, res) => {
     try {
+        const { page = 1, limit = 20 } = req.query;
+        const pageNum = Number(page);
+        const limitNum = Number(limit);
+        const skipNum = (pageNum - 1) * limitNum;
+
+        const total = await CommunityReport.countDocuments();
         const reports = await CommunityReport.find()
             .populate("postId", "content author category")
             .populate("reportedBy", "name email")
             .populate({ path: "postId", populate: { path: "author", select: "name email role" } })
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .skip(skipNum)
+            .limit(limitNum);
 
-        res.status(200).json(reports);
+        res.status(200).json({
+            reports,
+            total,
+            page: pageNum,
+            pages: Math.ceil(total / limitNum)
+        });
     } catch (error) {
         console.error("Error fetching reports:", error);
         res.status(500).json({ message: "Server Error" });

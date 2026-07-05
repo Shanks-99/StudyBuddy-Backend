@@ -35,8 +35,12 @@ const createResource = async (req, res) => {
 // @access  Private
 const getResources = async (req, res) => {
     try {
-        const { search, category } = req.query;
+        const { search, category, uploader } = req.query;
         const filter = {};
+
+        if (uploader) {
+            filter.uploader = uploader;
+        }
 
         if (category && category !== "all") {
             filter.category = category;

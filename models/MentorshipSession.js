@@ -48,7 +48,12 @@ const mentorshipSessionSchema = new mongoose.Schema(
         },
         status: {
             type: String,
-            enum: ["pending", "accepted", "declined", "completed", "cancelled"],
+            enum: ["pending", "accepted", "declined", "completed", "cancelled", "scheduled"],
+            default: "pending",
+        },
+        paymentStatus: {
+            type: String,
+            enum: ["pending", "accepted", "sent", "verified", "rejected", "none"],
             default: "pending",
         },
     },

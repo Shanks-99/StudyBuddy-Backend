@@ -16,6 +16,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const studyBuddyRoutes = require("./routes/studyBuddyRoutes");
 const communityRoutes = require("./routes/communityRoutes");
 const resourceRoutes = require("./routes/resourceRoutes");
+const groupSessionRoutes = require("./routes/groupSessionRoutes");
 const { startJob: startSessionReminderJob } = require("./jobs/sessionReminderJob");
 
 // Initialize express app FIRST
@@ -58,13 +59,30 @@ io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
   // --- Study Room Socket Logic ---
-  socket.on("join-room", ({ roomId, userId, name }) => {
+  socket.on("join-room", async ({ roomId, userId, name }) => {
     if (!userId) {
       console.error(`[Socket] join-room failed: Missing userId for user ${name}`);
       return;
     }
 
     console.log(`[Socket] User ${name} (${userId}) attempting to join room ${roomId}`);
+
+    try {
+      const StudyRoom = require("./models/StudyRoom");
+      const roomInfo = await StudyRoom.findById(roomId);
+      if (roomInfo && roomInfo.maxParticipants) {
+        const activeUsersCount = roomUsers[roomId] ? roomUsers[roomId].length : 0;
+        const isAlreadyIn = roomUsers[roomId] && roomUsers[roomId].some(u => String(u.userId) === String(userId));
+        
+        if (!isAlreadyIn && activeUsersCount >= roomInfo.maxParticipants) {
+          console.warn(`[Socket] Room ${roomId} is full: ${activeUsersCount}/${roomInfo.maxParticipants}`);
+          socket.emit("room-full", { maxParticipants: roomInfo.maxParticipants });
+          return;
+        }
+      }
+    } catch (err) {
+      console.error("[Socket] Error looking up room info:", err);
+    }
 
     // --- FIX Phase 2: Cleanup FIRST ---
     if (roomUsers[roomId]) {
@@ -277,6 +295,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/studybuddy", studyBuddyRoutes);
 app.use("/api/community", communityRoutes);
 app.use("/api/resources", resourceRoutes);
+app.use("/api/group-sessions", groupSessionRoutes);
 
 // Test Route
 app.get("/", (req, res) => {

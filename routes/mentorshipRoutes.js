@@ -14,6 +14,9 @@ const {
     getUpcomingSessionsForMentor,
     getUpcomingSessionsForStudent,
     isMentorBusy,
+    markSessionPaymentSent,
+    verifySessionPayment,
+    rejectSessionPayment,
 } = require("../controllers/mentorshipController");
 
 const router = express.Router();
@@ -43,6 +46,10 @@ router.post("/requests", authMiddleware, createSessionRequest);
 router.get("/requests/mentor", authMiddleware, getSessionRequestsForMentor);
 router.patch("/requests/:requestId/accept", authMiddleware, acceptSessionRequest);
 router.patch("/requests/:requestId/decline", authMiddleware, declineSessionRequest);
+
+router.patch("/sessions/:sessionId/payment-sent", authMiddleware, markSessionPaymentSent);
+router.patch("/sessions/:sessionId/verify-payment", authMiddleware, verifySessionPayment);
+router.patch("/sessions/:sessionId/reject-payment", authMiddleware, rejectSessionPayment);
 
 router.get("/sessions/upcoming/mentor", authMiddleware, getUpcomingSessionsForMentor);
 router.get("/sessions/upcoming/student", authMiddleware, getUpcomingSessionsForStudent);

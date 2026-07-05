@@ -10,7 +10,7 @@ const reportSchema = new mongoose.Schema(
         reportedUser: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
-            required: true,
+            required: false,
         },
         reason: {
             type: String,
@@ -24,7 +24,7 @@ const reportSchema = new mongoose.Schema(
         },
         category: {
             type: String,
-            enum: ["harassment", "spam", "inappropriate", "fraud", "other"],
+            enum: ["harassment", "spam", "inappropriate", "fraud", "bug", "other"],
             default: "other",
         },
         status: {

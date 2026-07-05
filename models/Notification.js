@@ -16,7 +16,7 @@ const notificationSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['mentorship_request', 'mentorship_status', 'session_reminder', 'system'],
+        enum: ['mentorship_request', 'mentorship_status', 'session_reminder', 'system', 'group_session_request', 'group_session_status', 'group_payment_verification', 'group_session_join'],
         default: 'system'
     },
     link: {

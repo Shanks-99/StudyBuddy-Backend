@@ -6,16 +6,27 @@ const Message = require("../models/Message");
 // @access  Private
 const createRoom = async (req, res) => {
     try {
-        const { name, description, userId } = req.body;
+        const { name, description, userId, maxParticipants, isPrivate, customRoomId, passcode } = req.body;
 
         if (!name || !userId) {
             return res.status(400).json({ message: "Room name and user ID are required" });
+        }
+
+        if (isPrivate && customRoomId) {
+            const existingRoom = await StudyRoom.findOne({ customRoomId, isPrivate: true });
+            if (existingRoom) {
+                return res.status(400).json({ message: "A private room with this Room ID already exists" });
+            }
         }
 
         const newRoom = await StudyRoom.create({
             name,
             description,
             createdBy: userId,
+            maxParticipants: maxParticipants || 10,
+            isPrivate: isPrivate || false,
+            customRoomId: isPrivate ? customRoomId : null,
+            passcode: isPrivate ? passcode : null
         });
 
         res.status(201).json(newRoom);
@@ -44,6 +55,22 @@ const getRooms = async (req, res) => {
 const getMessages = async (req, res) => {
     try {
         const { roomId } = req.params;
+        const { passcode, userId } = req.query;
+
+        const room = await StudyRoom.findById(roomId);
+        if (!room) {
+            return res.status(404).json({ message: "Room not found" });
+        }
+
+        if (room.isPrivate) {
+            const isCreator = userId && String(room.createdBy) === String(userId);
+            if (!isCreator) {
+                if (!passcode || room.passcode !== passcode) {
+                    return res.status(401).json({ message: "Incorrect password for this private room" });
+                }
+            }
+        }
+
         // Get last 50 messages for performance, can implement pagination later
         const messages = await Message.find({ roomId })
             .populate('sender', 'name')
@@ -62,11 +89,23 @@ const getMessages = async (req, res) => {
 const getRoomById = async (req, res) => {
     try {
         const { roomId } = req.params;
+        const { passcode, userId } = req.query;
+
         const room = await StudyRoom.findById(roomId).populate('createdBy', 'name email');
 
         if (!room) {
             return res.status(404).json({ message: "Room not found" });
         }
+
+        if (room.isPrivate) {
+            const isCreator = userId && String(room.createdBy._id || room.createdBy) === String(userId);
+            if (!isCreator) {
+                if (!passcode || room.passcode !== passcode) {
+                    return res.status(401).json({ message: "Incorrect password for this private room" });
+                }
+            }
+        }
+
         res.status(200).json(room);
     } catch (error) {
         console.error("Error fetching room:", error);

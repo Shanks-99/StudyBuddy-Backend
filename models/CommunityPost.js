@@ -14,7 +14,7 @@ const communityPostSchema = new mongoose.Schema(
         },
         category: {
             type: String,
-            enum: ["question", "discussion", "study-tips", "resource", "achievement"],
+            enum: ["question", "discussion", "study-tips", "resource", "achievement", "group-session"],
             default: "discussion",
         },
         likes: [
@@ -30,6 +30,11 @@ const communityPostSchema = new mongoose.Schema(
         isHidden: {
             type: Boolean,
             default: false,
+        },
+        groupSessionRef: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "GroupSession",
+            default: null,
         },
     },
     { timestamps: true }

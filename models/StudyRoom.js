@@ -15,6 +15,24 @@ const studyRoomSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
             required: true,
+        },
+        maxParticipants: {
+            type: Number,
+            default: 10
+        },
+        isPrivate: {
+            type: Boolean,
+            default: false
+        },
+        customRoomId: {
+            type: String,
+            trim: true,
+            default: null
+        },
+        passcode: {
+            type: String,
+            trim: true,
+            default: null
         }
     },
     { timestamps: true }

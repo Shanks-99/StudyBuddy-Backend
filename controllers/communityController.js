@@ -52,6 +52,7 @@ const getPosts = async (req, res) => {
 
         let posts = await CommunityPost.find(filter)
             .populate("author", "name role avatar")
+            .populate("groupSessionRef")
             .sort(sortOption)
             .skip(skip)
             .limit(parseInt(limit));
@@ -74,7 +75,9 @@ const getPosts = async (req, res) => {
 // @route   GET /api/community/posts/:postId
 const getPostById = async (req, res) => {
     try {
-        const post = await CommunityPost.findById(req.params.postId).populate("author", "name role avatar");
+        const post = await CommunityPost.findById(req.params.postId)
+            .populate("author", "name role avatar")
+            .populate("groupSessionRef");
         if (!post) return res.status(404).json({ message: "Post not found" });
         res.status(200).json(post);
     } catch (error) {

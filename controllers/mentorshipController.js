@@ -187,8 +187,9 @@ exports.getAvailabilityByMentorName = async (req, res) => {
 
 exports.listMentorsForStudents = async (_req, res) => {
     try {
-        // Find approved mentors
-        const allApprovedProfiles = await MentorProfile.find({ status: "approved" }).sort({ updatedAt: -1 });
+        const allApprovedProfiles = await MentorProfile.find({ status: "approved" })
+            .select("-degreeFiles")
+            .sort({ updatedAt: -1 });
         
         // Filter out mentors who haven't set any availability
         const profilesWithAvailability = allApprovedProfiles.filter(profile => {
@@ -304,7 +305,7 @@ exports.acceptSessionRequest = async (req, res) => {
                 status: "pending",
             },
             {
-                $set: { status: "accepted" },
+                $set: { status: "accepted", paymentStatus: "accepted" },
             },
             { new: true }
         );
@@ -379,7 +380,7 @@ exports.getUpcomingSessionsForMentor = async (req, res) => {
         const mentorName = req.query.mentorName || req.user.name;
         const allSessions = await MentorshipSession.find({
             mentorName,
-            status: "accepted",
+            status: { $in: ["accepted", "scheduled"] },
         }).sort({ createdAt: -1 });
 
         // Filter for upcoming only (session ends 1 hour after start)
@@ -430,7 +431,7 @@ exports.getUpcomingSessionsForStudent = async (req, res) => {
                 { student: req.user.id },
                 { studentName: req.user.name },
             ],
-            status: "accepted",
+            status: { $in: ["accepted", "scheduled"] },
         }).sort({ createdAt: -1 });
 
         const now = new Date();
@@ -460,12 +461,114 @@ exports.isMentorBusy = async (req, res) => {
             mentorName,
             dateLabel,
             timeSlot,
-            status: { $in: ["pending", "accepted"] },
+            status: { $in: ["pending", "accepted", "scheduled"] },
         });
 
         res.json({ busy: Boolean(session) });
     } catch (error) {
         console.error("isMentorBusy error:", error);
         res.status(500).json({ msg: "Failed to check mentor availability" });
+    }
+};
+
+// ── Student: Mark 1-1 session payment as sent ──
+exports.markSessionPaymentSent = async (req, res) => {
+    try {
+        if (!ensureStudent(req, res)) return;
+
+        const { sessionId } = req.params;
+        const session = await MentorshipSession.findOneAndUpdate(
+            { _id: sessionId, student: req.user.id, status: "accepted" },
+            { $set: { paymentStatus: "sent" } },
+            { new: true }
+        );
+
+        if (!session) {
+            return res.status(404).json({ msg: "Mentorship session not found or not accepted yet" });
+        }
+
+        // Notify mentor
+        if (session.mentor) {
+            await createNotification(
+                session.mentor,
+                "Payment Received — Verification Needed",
+                `${req.user.name} has marked payment as sent for mentorship session. Please verify.`,
+                "payment_verification",
+                "/instructor-mentorship"
+            );
+        }
+
+        res.json({ session });
+    } catch (error) {
+        console.error("markSessionPaymentSent error:", error);
+        res.status(500).json({ msg: "Failed to mark payment as sent" });
+    }
+};
+
+// ── Mentor: Verify 1-1 session payment ──
+exports.verifySessionPayment = async (req, res) => {
+    try {
+        if (!ensureTeacher(req, res)) return;
+
+        const { sessionId } = req.params;
+        const session = await MentorshipSession.findOneAndUpdate(
+            { _id: sessionId, mentor: req.user.id, status: "accepted" },
+            { $set: { paymentStatus: "verified", status: "scheduled" } },
+            { new: true }
+        );
+
+        if (!session) {
+            return res.status(404).json({ msg: "Mentorship session not found or not in accepted state" });
+        }
+
+        // Notify student
+        if (session.student) {
+            await createNotification(
+                session.student,
+                "Payment Verified — Session Scheduled!",
+                `Your payment to ${session.mentorName} has been verified. The session is now officially scheduled!`,
+                "mentorship_status",
+                "/student-dashboard"
+            );
+        }
+
+        res.json({ session });
+    } catch (error) {
+        console.error("verifySessionPayment error:", error);
+        res.status(500).json({ msg: "Failed to verify payment" });
+    }
+};
+
+// ── Mentor: Reject 1-1 session payment ──
+exports.rejectSessionPayment = async (req, res) => {
+    try {
+        if (!ensureTeacher(req, res)) return;
+
+        const { sessionId } = req.params;
+        const session = await MentorshipSession.findOneAndUpdate(
+            { _id: sessionId, mentor: req.user.id, status: "accepted" },
+            { $set: { paymentStatus: "rejected" } },
+            { new: true }
+        );
+
+        if (!session) {
+            return res.status(404).json({ msg: "Mentorship session not found or not in accepted state" });
+        }
+
+        // Notify student
+        if (session.student) {
+            await createNotification(
+                session.student,
+                "Payment Rejected — Please Retry",
+                `Your payment to ${session.mentorName} was not verified. Please re-send the payment and try again.`,
+                "mentorship_status",
+                "/student-dashboard"
+            );
+        }
+
+        res.json({ session });
+    } catch (error) {
+        console.error("rejectSessionPayment error:", error);
+        res.status(500).json({ msg: "Failed to reject payment" });
     }
 };

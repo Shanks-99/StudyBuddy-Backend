@@ -321,16 +321,22 @@ exports.submitReport = async (req, res) => {
     try {
         const { reportedUserId, reason, description, category } = req.body;
 
-        if (!reportedUserId || !reason) {
-            return res.status(400).json({ msg: "Reported user and reason are required" });
+        if (!reason) {
+            return res.status(400).json({ msg: "Reason is required" });
         }
 
-        const reportedUser = await User.findById(reportedUserId);
-        if (!reportedUser) return res.status(404).json({ msg: "Reported user not found" });
+        if (category !== "bug" && !reportedUserId) {
+            return res.status(400).json({ msg: "Reported user is required" });
+        }
+
+        if (reportedUserId) {
+            const reportedUser = await User.findById(reportedUserId);
+            if (!reportedUser) return res.status(404).json({ msg: "Reported user not found" });
+        }
 
         const report = await Report.create({
             reporter: req.user.id,
-            reportedUser: reportedUserId,
+            reportedUser: reportedUserId || null,
             reason,
             description: description || "",
             category: category || "other",
